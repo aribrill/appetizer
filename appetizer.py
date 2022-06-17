@@ -11,36 +11,8 @@ from dash import Dash, html, dcc, Input, Output, State
 import pandas as pd
 
 
-try:
-    df = pd.read_excel("Weekly menu.xlsx", sheet_name="Recipes", engine="openpyxl")
-except FileNotFoundError:
-    dir_path = os.path.abspath('')
-    raise FileNotFoundError('Error: "Weekly menu.xlsx" not found. '
-                            'Please download and copy it to: {}'.format(dir_path))
-
-df = df.dropna(axis=1, how='all')
-df['Notes'] = df['Notes'].where(pd.notnull, None)
-recipes = df['Recipe'].sort_values().values
-categories = {}
-
-def get_dummies(df, col):
-    """Gets dummy variables, allowing for multiple values with
-    extra/missing whitespaces in the separators"""
-    dummies_df = df[col].str.split(',')                        .apply(lambda lst: [x.strip() for x in lst]
-                               if type(lst) == list else lst)\
-                        .str.join(',')\
-                        .str.get_dummies(',')
-    categories = dummies_df.columns.values.tolist()
-    dummies_df = dummies_df.add_prefix('{}_'.format(col))
-    return dummies_df, categories
-
-for col in ["Meal", "Protein", "Cuisine", "Form", "Starch"]:
-    dummies_df, col_categories = get_dummies(df, col)
-    df = pd.concat([df, dummies_df], axis=1)
-    categories[col] = col_categories
-
-
 def get_recipe_indices(df, recipes):
+    """Gets a list of indices in df corresponding to the recipes"""
     inds = []
     for recipe in recipes:
         inds.append(int(df[df['Recipe'] == recipe].index.values))
@@ -51,19 +23,21 @@ def filter_col(df, col, prev_inds):
     """Selects rows NOT matching any previous recipes
     in the relevant category of columns
     """
-    col_filter = df.columns.str.startswith('{}_'.format(col))
+    col_filter = df.columns.str.startswith(f"{col}_")
     mask = df.loc[prev_inds, col_filter].sum(0).astype(bool)
     return ((df[df.columns[col_filter]] * mask) ^ 1).all(axis=1)
 
 
 def select_meals(df, meals):
+    """Selects recipes appropriate for the specified meals"""
     mask = pd.Series(False, df.index)
     for meal in meals:
-        mask |= df['Meal_{}'.format(meal)]
+        mask |= df[f"Meal_{meal}"]
     return mask
 
 
 def select_servings(df, servings=None):
+    """Selects recipes appropriate for the specified servings"""
     mask = pd.Series(True, df.index)
     if servings is not None:
         mask &= df['Min Servings'] <= servings
@@ -73,31 +47,31 @@ def select_servings(df, servings=None):
 
 def get_recipe_recommendations(prev_recipes, meals, servings, seed):
     """
-    Returns a dataframe of recommended recipes that are dissimilar to previous recipes,
-    are appropriate for the chosen meals, and can provide the chosen number of servings.
+    Returns a dataframe of recommended recipes that are dissimilar to previous
+    recipes, are appropriate for the chosen meals, and can provide the chosen
+    number of servings.
 
-    Dissimilarity is determined based on four categories: in decreasing importance,
-    Protein, Cusine, Form, and Starch.
-    Recommendations must be dissimilar in at least one category, and are ranked 1-4
-    based on how many categories they are dissimilar in.
-    
-    The recommendations are shuffled within each ranking level. A random seed is provided
-    to ensure that the order is consistent whenever the "Suggest Recipe" button is pressed.
-    The seed is randomized on app initialization so that the ordering varies from session
-    to session.
+    Dissimilarity is determined based on four categories: in decreasing
+    importance, Protein, Cusine, Form, and Starch.
+    Recommendations must be dissimilar in at least one category, and are ranked
+    1-4 based on how many categories they are dissimilar in.
+
+    The recommendations are shuffled within each ranking level. A random seed
+    is provided to ensure that the order is consistent whenever the "Suggest
+    Recipe" button is pressed. The seed is randomized on app initialization so
+    that the ordering varies from session to session.
     """
     if prev_recipes is None:
         prev_recipes = []
     prev_inds = get_recipe_indices(df, prev_recipes)
     recommendation_categories = ['Protein', 'Cuisine', 'Form', 'Starch']
-    
+
     recommendations = []
     ratings = []
     mask = pd.Series(True, df.index)
     mask &= select_meals(df, meals)
     mask &= select_servings(df, servings)
-    
-    prev_mask = pd.Series(False, df.index)
+
     for rating in range(len(recommendation_categories), 0, -1):
         rating_mask = mask.copy()
         for col in recommendation_categories[:rating]:
@@ -107,7 +81,7 @@ def get_recipe_recommendations(prev_recipes, meals, servings, seed):
         recommendations.append(shuffled_recipes)
         ratings.extend([rating]*len(shuffled_recipes))
         mask &= ~rating_mask
-    
+
     recommendations = pd.concat(recommendations, axis=0)
     ratings = pd.Series(data=ratings, index=recommendations.index, name='Rating')
     recommendations = pd.concat([recommendations, ratings], axis=1)
@@ -124,10 +98,10 @@ def select_recommendation(recommendations, i):
     notes = df['Notes'][recommendations.index[i]]
     if notes is None:
         notes = ""
-    markdown = """
-    ## {} | {}
-    {}
-    """.format(recommendation, stars, notes)
+    markdown = f"""
+    ## {recommendation} | {stars}
+    {notes}
+    """
     return markdown
 
 
@@ -139,7 +113,7 @@ def get_recipe_inspiration(prev_recipes):
     prev_inds = get_recipe_indices(df, prev_recipes)
 
     def get_new_category(col):
-        col_filter = df.columns.str.startswith('{}_'.format(col))
+        col_filter = df.columns.str.startswith(f"{col}_")
         mask = df.loc[prev_inds, col_filter].sum(0).astype(bool)
         inspo_categories = list(compress(categories[col], ~mask))
         try:
@@ -148,7 +122,7 @@ def get_recipe_inspiration(prev_recipes):
         except ValueError:
             pass
         return random.choice(inspo_categories)
-    
+
     inspiration = ""
     if random.random() < 0.5:
         inspiration += get_new_category("Cuisine")
@@ -165,17 +139,45 @@ def get_recipe_inspiration(prev_recipes):
     return inspiration
 
 
+# Load and process the recipes dataframe
+try:
+    df = pd.read_excel("Weekly menu.xlsx", sheet_name="Recipes",
+                       engine="openpyxl")
+except FileNotFoundError:
+    dir_path = os.path.abspath('')
+    print('Error: "Weekly menu.xlsx" not found. '
+          f'Please download and copy it to: {dir_path}')
+    sys.exit()
+df = df.dropna(axis=1, how='all')
+df['Notes'] = df['Notes'].where(pd.notnull, None)
+recipes = df['Recipe'].sort_values().values
+categories = {}
 
+
+def get_dummies(df, col):
+    """Gets dummy variables, allowing for multiple values with
+    extra/missing whitespaces in the separators"""
+    dummies_df = df[col].str.split(',').apply(
+        lambda lst: [x.strip() for x in lst]
+                    if isinstance(lst, list) else lst)\
+                                       .str.join(',')\
+                                       .str.get_dummies(',')
+    col_categories = dummies_df.columns.values.tolist()
+    dummies_df = dummies_df.add_prefix(f"{col}_")
+    return dummies_df, col_categories
+
+
+for col in ["Meal", "Protein", "Cuisine", "Form", "Starch"]:
+    dummies_df, col_categories = get_dummies(df, col)
+    df = pd.concat([df, dummies_df], axis=1)
+    categories[col] = col_categories
+
+
+# Define the app
 seed = random.randint(0, 2**32 - 1)
 
 app = Dash(__name__)
 app.title = 'Appetizer'
-# This favicon was generated using the following graphics from Twitter Twemoji:
-# - Graphics Title: 1f966.svg
-# - Graphics Author: Copyright 2020 Twitter, Inc and other contributors (https://github.com/twitter/twemoji)
-# - Graphics Source: https://github.com/twitter/twemoji/blob/master/assets/svg/1f966.svg
-# - Graphics License: CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
-app._favicon = ("favicon.ico")
 
 @app.callback(
     Output('suggest-recipe', 'n_clicks'),
@@ -186,6 +188,7 @@ app._favicon = ("favicon.ico")
     Input('restart', 'n_clicks')
 )
 def reset_clicks(*args):
+    del args
     return None, None
 
 
@@ -199,10 +202,10 @@ def reset_clicks(*args):
 )
 def suggest_recipe(n_clicks, prev_recipes, meals, servings):
     if n_clicks is not None:
-        recommendations = get_recipe_recommendations(prev_recipes, meals, servings, seed)
+        recommendations = get_recipe_recommendations(prev_recipes, meals,
+                                                     servings, seed)
         return select_recommendation(recommendations, n_clicks - 1), False
-    else:
-        return "", True
+    return "", True
 
 
 @app.callback(
@@ -213,8 +216,7 @@ def suggest_recipe(n_clicks, prev_recipes, meals, servings):
 def inspire_recipe(n_clicks, prev_recipes):
     if n_clicks is not None:
         return get_recipe_inspiration(prev_recipes)
-    else:
-        return ""
+    return ""
 
 
 app.layout = html.Div(children=[
@@ -234,12 +236,14 @@ app.layout = html.Div(children=[
                id='servings-selection'),
     html.Br(),
     html.Div([
-        html.Button("Restart", id='restart', disabled=True, style={'display': 'inline-block'}),
+        html.Button("Restart", id='restart', disabled=True,
+                    style={'display': 'inline-block'}),
         html.Button("Suggest Recipe", id='suggest-recipe',
                     style={'display': 'inline-block', 'margin-left': '15px'}),
         html.Button("Inspire Recipe", id='inspire-recipe',
                     style={'display': 'inline-block', 'margin-left': '15px'}),
-        html.Div(id='recipe-inspiration', style={'display': 'inline-block', "margin-left": "15px"}),
+        html.Div(id='recipe-inspiration',
+                 style={'display': 'inline-block', 'margin-left': '15px'}),
     ]),
     dcc.Markdown(id='recipe-suggestion', link_target="_blank"),
 ])
