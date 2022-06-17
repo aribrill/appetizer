@@ -1,0 +1,13 @@
+# conda env create -f environment.yml
+name: app
+channels:
+    - anaconda
+    - conda-forge
+dependencies:
+    - dash>=2.4
+    - python
+    - line_profiler
+    - openpyxl
+    - pandas
+    - pip
+    - pylint
