@@ -19,7 +19,7 @@ except FileNotFoundError:
                             'Please download and copy it to: {}'.format(dir_path))
 
 df = df.dropna(axis=1, how='all')
-df['Notes'][pd.isna(df['Notes'])] = None
+df['Notes'] = df['Notes'].where(pd.notnull, None)
 recipes = df['Recipe'].sort_values().values
 categories = {}
 
