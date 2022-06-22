@@ -112,14 +112,25 @@ def select_recommendation(df, recommendations, i):
     return markdown
 
 
+
+
+def merge_strings(*strings):
+    """Merge strings unless any is null"""
+    if None in strings:
+        return ""
+    return "".join(strings)
+
+
 def get_recipe_inspiration(df, categories, prev_recipes):
     """Generates a random recipe idea using categories
     dissimilar to the previous recipes"""
+
     if prev_recipes is None:
         prev_recipes = []
     prev_inds = get_recipe_indices(df, prev_recipes)
 
     def get_new_category(col):
+        """Get a category in col not used by any of the previous recipes"""
         col_filter = df.columns.str.startswith(f"{col}_")
         mask = df.loc[prev_inds, col_filter].sum(0).astype(bool)
         inspo_categories = list(compress(categories[col], ~mask))
@@ -128,21 +139,21 @@ def get_recipe_inspiration(df, categories, prev_recipes):
             inspo_categories.remove('other')
         except ValueError:
             pass
-        return random.choice(inspo_categories)
+        try:
+            return random.choice(inspo_categories)
+        except IndexError:
+            return None
 
     inspiration = ""
     if random.random() < 0.5:
-        inspiration += get_new_category("Cuisine")
-        inspiration += " "
+        inspiration += merge_strings(get_new_category("Cuisine"), " ")
     if random.random() < 0.7:
-        inspiration += get_new_category("Form")
-        inspiration += " "
-    if inspiration:
-        inspiration += "with "
-    inspiration += get_new_category("Protein")
+        inspiration += merge_strings(get_new_category("Form"), " ")
+    prefix = "with " if inspiration else ""
+    inspiration += merge_strings(prefix, get_new_category("Protein"), "")
     if random.random() < 0.5:
-        inspiration += " and "
-        inspiration += get_new_category("Starch")
+        prefix = " and " if inspiration else ""
+        inspiration += merge_strings(prefix, get_new_category("Starch"))
     return inspiration
 
 
