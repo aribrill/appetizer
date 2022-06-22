@@ -130,3 +130,6 @@ dmypy.json
 
 # Excel file
 *.xlsx
+
+# Pylint configuration
+pylintrc

@@ -2,6 +2,11 @@
 # coding: utf-8
 
 
+"""
+Appetizer: a web app to help choose recipes for the week
+"""
+
+
 from itertools import compress
 import os
 import random
@@ -45,7 +50,7 @@ def select_servings(df, servings=None):
     return mask
 
 
-def get_recipe_recommendations(prev_recipes, meals, servings, seed):
+def get_recipe_recommendations(df, prev_recipes, meals, servings, seed):
     """
     Returns a dataframe of recommended recipes that are dissimilar to previous
     recipes, are appropriate for the chosen meals, and can provide the chosen
@@ -88,7 +93,7 @@ def get_recipe_recommendations(prev_recipes, meals, servings, seed):
     return recommendations
 
 
-def select_recommendation(recommendations, i):
+def select_recommendation(df, recommendations, i):
     """Formats the recommendation for display"""
     if len(recommendations) == 0 or i >= len(recommendations):
         return "No more recipes to recommend!"
@@ -105,7 +110,7 @@ def select_recommendation(recommendations, i):
     return markdown
 
 
-def get_recipe_inspiration(prev_recipes):
+def get_recipe_inspiration(df, categories, prev_recipes):
     """Generates a random recipe idea using categories
     dissimilar to the previous recipes"""
     if prev_recipes is None:
@@ -139,21 +144,6 @@ def get_recipe_inspiration(prev_recipes):
     return inspiration
 
 
-# Load and process the recipes dataframe
-try:
-    df = pd.read_excel("Weekly menu.xlsx", sheet_name="Recipes",
-                       engine="openpyxl")
-except FileNotFoundError:
-    dir_path = os.path.abspath('')
-    print('Error: "Weekly menu.xlsx" not found. '
-          f'Please download and copy it to: {dir_path}')
-    sys.exit()
-df = df.dropna(axis=1, how='all')
-df['Notes'] = df['Notes'].where(pd.notnull, None)
-recipes = df['Recipe'].sort_values().values
-categories = {}
-
-
 def get_dummies(df, col):
     """Gets dummy variables, allowing for multiple values with
     extra/missing whitespaces in the separators"""
@@ -167,85 +157,109 @@ def get_dummies(df, col):
     return dummies_df, col_categories
 
 
-for col in ["Meal", "Protein", "Cuisine", "Form", "Starch"]:
-    dummies_df, col_categories = get_dummies(df, col)
-    df = pd.concat([df, dummies_df], axis=1)
-    categories[col] = col_categories
+def run_app():
+    """Load and process the recipes dataframe and run the appetizer app"""
+
+    try:
+        df = pd.read_excel("Weekly menu.xlsx", sheet_name="Recipes",
+                           engine="openpyxl")
+    except FileNotFoundError:
+        dir_path = os.path.abspath('')
+        print('Error: "Weekly menu.xlsx" not found. '
+              f'Please download and copy it to: {dir_path}')
+        sys.exit()
+    df = df.dropna(axis=1, how='all')
+    df['Notes'] = df['Notes'].where(pd.notnull, None)
+    recipes = df['Recipe'].sort_values().values
+    categories = {}
+
+    for col in ["Meal", "Protein", "Cuisine", "Form", "Starch"]:
+        dummies_df, col_categories = get_dummies(df, col)
+        df = pd.concat([df, dummies_df], axis=1)
+        categories[col] = col_categories
 
 
-# Define the app
-seed = random.randint(0, 2**32 - 1)
+    # Define the app
+    seed = random.randint(0, 2**32 - 1)
 
-app = Dash(__name__)
-app.title = 'Appetizer'
+    app = Dash(__name__)
+    app.title = 'Appetizer'
 
-@app.callback(
-    Output('suggest-recipe', 'n_clicks'),
-    Output('inspire-recipe', 'n_clicks'),
-    Input('recipe-selection', 'value'),
-    Input('meal-selection', 'value'),
-    Input('servings-selection', 'value'),
-    Input('restart', 'n_clicks')
-)
-def reset_clicks(*args):
-    del args
-    return None, None
-
-
-@app.callback(
-    Output('recipe-suggestion', 'children'),
-    Output('restart', 'disabled'),
-    Input('suggest-recipe', 'n_clicks'),
-    State('recipe-selection', 'value'),
-    State('meal-selection', 'value'),
-    State('servings-selection', 'value'),
-)
-def suggest_recipe(n_clicks, prev_recipes, meals, servings):
-    if n_clicks is not None:
-        recommendations = get_recipe_recommendations(prev_recipes, meals,
-                                                     servings, seed)
-        return select_recommendation(recommendations, n_clicks - 1), False
-    return "", True
+    @app.callback(
+        Output('suggest-recipe', 'n_clicks'),
+        Output('inspire-recipe', 'n_clicks'),
+        Input('recipe-selection', 'value'),
+        Input('meal-selection', 'value'),
+        Input('servings-selection', 'value'),
+        Input('restart', 'n_clicks')
+    )
+    def reset_clicks(*args):
+        del args
+        return None, None
 
 
-@app.callback(
-    Output('recipe-inspiration', 'children'),
-    Input('inspire-recipe', 'n_clicks'),
-    State('recipe-selection', 'value'),
-)
-def inspire_recipe(n_clicks, prev_recipes):
-    if n_clicks is not None:
-        return get_recipe_inspiration(prev_recipes)
-    return ""
+    @app.callback(
+        Output('recipe-suggestion', 'children'),
+        Output('restart', 'disabled'),
+        Input('suggest-recipe', 'n_clicks'),
+        State('recipe-selection', 'value'),
+        State('meal-selection', 'value'),
+        State('servings-selection', 'value'),
+    )
+    def suggest_recipe(n_clicks, prev_recipes, meals, servings):
+        if n_clicks is not None:
+            recommendations = get_recipe_recommendations(df, prev_recipes,
+                                                         meals, servings, seed)
+            return (select_recommendation(df, recommendations, n_clicks - 1),
+                    False)
+        return "", True
 
 
-app.layout = html.Div(children=[
-    html.H1("Appetizer", style={'textAlign': 'center'}),
-    html.Br(),
-    dcc.Dropdown(recipes, multi=True, placeholder='What have we eaten lately?',
-                 id='recipe-selection'),
-    html.Br(),
-    html.Label("Meals"),
-    dcc.Checklist(['breakfast', 'brunch', 'lunch', 'dinner', 'shabbat'],
-                  ['lunch', 'dinner'],
-                  inline=True, id='meal-selection'),
-    html.Br(),
-    html.Label("Servings"),
-    dcc.Slider(1, 12, 1, value=4, marks=None,
-               tooltip={'placement': 'bottom', 'always_visible': False},
-               id='servings-selection'),
-    html.Br(),
-    html.Div([
-        html.Button("Restart", id='restart', disabled=True,
-                    style={'display': 'inline-block'}),
-        html.Button("Suggest Recipe", id='suggest-recipe',
-                    style={'display': 'inline-block', 'margin-left': '15px'}),
-        html.Button("Inspire Recipe", id='inspire-recipe',
-                    style={'display': 'inline-block', 'margin-left': '15px'}),
-        html.Div(id='recipe-inspiration',
-                 style={'display': 'inline-block', 'margin-left': '15px'}),
-    ]),
-    dcc.Markdown(id='recipe-suggestion', link_target="_blank"),
-])
+    @app.callback(
+        Output('recipe-inspiration', 'children'),
+        Input('inspire-recipe', 'n_clicks'),
+        State('recipe-selection', 'value'),
+    )
+    def inspire_recipe(n_clicks, prev_recipes):
+        if n_clicks is not None:
+            return get_recipe_inspiration(df, categories, prev_recipes)
+        return ""
 
-app.run_server()
+
+    app.layout = html.Div(children=[
+        html.H1("Appetizer", style={'textAlign': 'center'}),
+        html.Br(),
+        dcc.Dropdown(recipes, multi=True,
+                     placeholder='What have we eaten lately?',
+                     id='recipe-selection'),
+        html.Br(),
+        html.Label("Meals"),
+        dcc.Checklist(['breakfast', 'brunch', 'lunch', 'dinner', 'shabbat'],
+                      ['lunch', 'dinner'],
+                      inline=True, id='meal-selection'),
+        html.Br(),
+        html.Label("Servings"),
+        dcc.Slider(1, 12, 1, value=4, marks=None,
+                   tooltip={'placement': 'bottom', 'always_visible': False},
+                   id='servings-selection'),
+        html.Br(),
+        html.Div([
+            html.Button("Restart", id='restart', disabled=True,
+                        style={'display': 'inline-block'}),
+            html.Button("Suggest Recipe", id='suggest-recipe',
+                        style={'display': 'inline-block',
+                               'margin-left': '15px'}),
+            html.Button("Inspire Recipe", id='inspire-recipe',
+                        style={'display': 'inline-block',
+                               'margin-left': '15px'}),
+            html.Div(id='recipe-inspiration',
+                     style={'display': 'inline-block', 'margin-left': '15px'}),
+        ]),
+        dcc.Markdown(id='recipe-suggestion', link_target="_blank"),
+    ])
+
+    app.run_server()
+
+
+if __name__ == '__main__':
+    run_app()
