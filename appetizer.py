@@ -74,6 +74,7 @@ def get_recipe_recommendations(df, prev_recipes, meals, servings, seed):
     recommendations = []
     ratings = []
     mask = pd.Series(True, df.index)
+    mask &= ~df.index.isin(prev_inds)
     mask &= select_meals(df, meals)
     mask &= select_servings(df, servings)
 
@@ -88,7 +89,8 @@ def get_recipe_recommendations(df, prev_recipes, meals, servings, seed):
         mask &= ~rating_mask
 
     recommendations = pd.concat(recommendations, axis=0)
-    ratings = pd.Series(data=ratings, index=recommendations.index, name='Rating')
+    ratings = pd.Series(data=ratings, index=recommendations.index,
+                        name='Rating')
     recommendations = pd.concat([recommendations, ratings], axis=1)
     return recommendations
 
