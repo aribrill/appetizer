@@ -14,6 +14,7 @@ import sys
 
 from dash import Dash, html, dcc, Input, Output, State
 import pandas as pd
+from waitress import serve
 
 
 def get_recipe_indices(df, recipes):
@@ -110,8 +111,6 @@ def select_recommendation(df, recommendations, i):
     {notes}
     """
     return markdown
-
-
 
 
 def merge_strings(*strings):
@@ -271,7 +270,7 @@ def run_app():
         dcc.Markdown(id='recipe-suggestion', link_target="_blank"),
     ])
 
-    app.run_server()
+    serve(app.server, host="0.0.0.0", port=8080)
 
 
 if __name__ == '__main__':
