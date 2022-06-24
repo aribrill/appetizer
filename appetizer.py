@@ -172,14 +172,25 @@ def get_dummies(df, col):
 def run_app():
     """Load and process the recipes dataframe and run the appetizer app"""
 
+    # Define the app
+    app = Dash(__name__)
+    app.title = 'Appetizer'
+    seed = random.randint(0, 2**32 - 1)
+
+    # Load the data
     try:
         df = pd.read_excel("Weekly menu.xlsx", sheet_name="Recipes",
                            engine="openpyxl")
     except FileNotFoundError:
         dir_path = os.path.abspath('')
-        print('Error: "Weekly menu.xlsx" not found. '
-              f'Please download and copy it to: {dir_path}')
+        error = ('Error: "Weekly menu.xlsx" not found. '
+                 f'Please download and copy it to: {dir_path}')
+        print(error)
+        app.layout = html.Div(error)
+        serve(app.server, host="0.0.0.0", port=8080)
         sys.exit()
+
+    # Clean the data
     df = df.dropna(axis=1, how='all')
     df['Notes'] = df['Notes'].where(pd.notnull, None)
     recipes = df['Recipe'].sort_values().values
@@ -190,12 +201,7 @@ def run_app():
         df = pd.concat([df, dummies_df], axis=1)
         categories[col] = col_categories
 
-
-    # Define the app
-    seed = random.randint(0, 2**32 - 1)
-
-    app = Dash(__name__)
-    app.title = 'Appetizer'
+    # Define the app functionality
 
     @app.callback(
         Output('suggest-recipe', 'n_clicks'),
@@ -237,7 +243,7 @@ def run_app():
             return get_recipe_inspiration(df, categories, prev_recipes)
         return ""
 
-
+    # Define the app layout
     app.layout = html.Div(children=[
         html.H1("Appetizer", style={'textAlign': 'center'}),
         html.Br(),
