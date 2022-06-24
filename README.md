@@ -16,3 +16,5 @@ To run appetizer, run in a terminal:
 ```
 ./appetizer.sh
 ```
+
+![Screenshot](screenshot.png)
